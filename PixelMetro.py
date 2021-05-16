@@ -8,7 +8,7 @@ def getLines(img):
     img = cv2.resize(img,(400,60))
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
 
-    kernel_size = 5
+    kernel_size = 1
     blur_gray = cv2.GaussianBlur(gray,(kernel_size, kernel_size),0)
 
     low_threshold = 50
