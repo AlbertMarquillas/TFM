@@ -383,13 +383,11 @@ def getMeters(p1,p2,l1,l2,l3,l4):
     
     paralel = True
     if abs(m1-m2) > 0.15 :
-        print("?")
         paralel = False
     
     if paralel == True:
         pmx = getPixelMeterX(p1,l1,l2)
         pmy,pf = getPixelMeterY(p2,l1,l2,l3,l4)
-        print(pmy)
     else:
         pmx,pfx = getPixelMeterY(p1,l3,l4,l1,l2,horitzontal=True,paralel=False)
         pmy,pf = getPixelMeterY(p2,l1,l2,l3,l4,paralel=False)
