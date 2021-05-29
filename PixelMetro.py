@@ -3,10 +3,29 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import math
+import argparse
+
+def kmeansImg(image,clusters = 60):
+    image_copy = np.copy(image)
+    pixel_values = image_copy.reshape((-1, 3))
+    pixel_values = np.float32(pixel_values)
+    stop_criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+    number_of_attempts = 5
+    centroid_initialization_strategy = cv2.KMEANS_RANDOM_CENTERS
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1.0)
+    _, labels, centers = cv2.kmeans(pixel_values,clusters,None,stop_criteria,number_of_attempts,centroid_initialization_strategy)
+
+    centers = np.uint8(centers)
+    segmented_data = centers[labels.flatten()]
+
+    segmented_image = segmented_data.reshape(image_copy.shape)
+    
+    return segmented_image
 
 def getLines(img):
-    img = cv2.resize(img,(400,60))
-    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    img = cv2.resize(img,(400,80))
+    kmeans = kmeansImg(img)
+    gray = cv2.cvtColor(kmeans,cv2.COLOR_BGR2GRAY)
 
     kernel_size = 1
     blur_gray = cv2.GaussianBlur(gray,(kernel_size, kernel_size),0)
@@ -14,14 +33,14 @@ def getLines(img):
     low_threshold = 50
     high_threshold = 125
     edges = cv2.Canny(blur_gray, low_threshold, high_threshold)
-    kernel = np.ones((5,5),np.uint8)
+    kernel = np.ones((6,6),np.uint8)
     closing = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
     
     rho = 1  # distance resolution in pixels of the Hough grid
     theta = np.pi / 180  # angular resolution in radians of the Hough grid
     threshold = 10  # minimum number of votes (intersections in Hough grid cell)
     min_line_length = 40  # minimum number of pixels making up a line
-    max_line_gap = 30  # maximum gap in pixels between connectable line segments
+    max_line_gap = 40  # maximum gap in pixels between connectable line segments
     line_image = np.copy(img) * 0  # creating a blank to draw lines on
 
     # Run Hough on edge detected image
@@ -35,7 +54,7 @@ def getLines(img):
     return lines
 
 
-def getMaxLine(lines):
+def getMaxLine(lines, lim = False):
     """
     Encuentra la linea más larga que será la de 2.74 m de la mesa
     """
@@ -44,6 +63,8 @@ def getMaxLine(lines):
     m = 0
     for line in lines:
         for x1,y1,x2,y2 in line:
+            if (y1 <= 10 or y2 <= 10) and lim == True:
+                continue
             dist = math.sqrt((x1-x2)**2 + (y1-y2)**2)
             if dist>maxline:
                 maxline = dist
@@ -86,19 +107,21 @@ def getBestCorner(lines, l, right, acc = 10):
     for line in lines:
         for x1,y1,x2,y2 in line:
             if right == True:
-                if (abs(x1 - xl1) <= acc) and (abs(y1 - yl1) <= acc):
+                if (abs(x1 - xl1) <= acc) and (abs(y1 - yl1) <= acc) and (y1 > y2):
                     m = (y2 - y1)/(x2 - x1)
                     alpha = math.atan((ml - m)/(1+ml*m))* 180 / np.pi
                     if (alpha>25 and alpha<90) or (alpha < -40 and alpha > -90):
                         best_line.append([[x1,y1,x2,y2]])
             else:
-                if (abs(x2 - xl2) <= acc) and (abs(y2 - yl2) <= acc):
+                if (abs(x2 - xl2) <= acc) and (abs(y2 - yl2) <= acc) and (y1 < y2):
                     m = (y2 - y1)/(x2 - x1)
                     alpha = math.atan((ml - m)/(1+ml*m))* 180 / np.pi
                     if (alpha<-20 and alpha>-90) or (alpha > 40 and alpha < 90):
                         best_line.append([[x1,y1,x2,y2]])
                     
     if best_line == []: #No ha encontrado linea buena
+        if acc == 500:
+            return [0,0,0,0]
         return getBestCorner(lines, l, right, acc+1)
     else:
         return getMaxLine(np.array(best_line))
@@ -107,25 +130,112 @@ def getRectangle(img, lines, show = False):
     """
     Crea el rectangulo a partir de las lineas sacadas de la imagen
     """
-    xa1,ya1,xb1,yb1 = getMaxLine(lines)
+    xa1,ya1,xb1,yb1 = getMaxLine(lines, lim = True)
     xa2,ya2,xc1,yc1 = getBestCorner(lines,getMaxLine(lines),True)
     xd1,yd1,xb2,yb2 = getBestCorner(lines,getMaxLine(lines),False)
     y,x,_ = img.shape
     xa = int(((xa1 + xa2) / 2)*x/400)
-    ya = int(((ya1 + ya2) / 2)*y/60)
+    ya = int(((ya1 + ya2) / 2)*y/80)
     xb = int(((xb1 + xb2) / 2)*x/400)
-    yb = int(((yb1 + yb2) / 2)*y/60)
+    yb = int(((yb1 + yb2) / 2)*y/80)
     xc = int(xc1*x/400)
-    yc = int(yc1*y/60)
+    yc = int(yc1*y/80)
     xd = int(xd1*x/400)
-    yd = int(yd1*y/60)
+    yd = int(yd1*y/80)
     if show == True:
-        cv2.line(img,(xa,ya),(xb,yb),(255,255,0),5);
-        cv2.line(img,(xa,ya),(xc,yc),(255,255,0),5);
-        cv2.line(img,(xd,yd),(xb,yb),(255,255,0),5);
-        cv2.line(img,(xc,yc),(xd,yd),(255,255,0),5);
+        cv2.line(img,(xa,ya),(xb,yb),(0,255,0),5);
+        cv2.line(img,(xa,ya),(xc,yc),(0,255,0),5);
+        cv2.line(img,(xd,yd),(xb,yb),(0,255,0),5);
+        cv2.line(img,(xc,yc),(xd,yd),(0,255,0),5);
         plt.imshow(img)
     return ([xa,ya],[xb,yb],[xc,yc],[xd,yd])
+
+def check_table(t):
+    [[xa,ya],[xb,yb],[xc,yc],[xd,yd]] = t
+    bottom = math.sqrt((xa-xb)**2+(ya-yb)**2)
+    top = math.sqrt((xc-xd)**2+(yc-yd)**2)
+    left = math.sqrt((xa-xc)**2+(ya-yc)**2)
+    right = math.sqrt((xb-xd)**2+(yb-yd)**2)
+    if top<80 or bottom<150 or right<10 or left<10:
+        return False
+    elif 0.3>(top/bottom) or 2<(top/bottom):
+        return False
+    elif 0.3>(left/right) or 3<(left/right):
+        return False
+    return True
+
+
+def get_Table(imagen, show = False):
+    tabs = []
+    for tab in range(10):
+        img = np.copy(imagen)
+        lines = getLines(img)
+        new_lines = []
+        for line in lines:
+            for x1,y1,x2,y2 in line:
+                new_lines.append([[x2,y2,x1,y1]])
+        lines = np.append(lines,np.array(new_lines), axis=0)
+        a,b,c,d = getRectangle(img,lines)
+        tabs += [[a,b,c,d]]
+    
+    num = np.zeros(len(tabs))
+    count = 0
+    for ind,t in enumerate(tabs):
+        a,b,c,d = t
+        trapez = np.copy(img) * 0
+        ppt = np.array([a,c,d,b], np.int32)
+        ppt = ppt.reshape((-1, 1, 2))
+        trapA = cv2.cvtColor(cv2.fillPoly(trapez, [ppt], (255), 8),cv2.COLOR_BGR2GRAY)
+        for x in tabs:
+            a,b,c,d = x
+            trapez = np.copy(img) * 0
+            ppt = np.array([a,c,d,b], np.int32)
+            ppt = ppt.reshape((-1, 1, 2))
+            trapB = cv2.cvtColor(cv2.fillPoly(trapez, [ppt], (255), 8),cv2.COLOR_BGR2GRAY)
+            totalA = cv2.countNonZero(cv2.bitwise_or(trapA,trapB))
+            totalB = cv2.countNonZero(cv2.bitwise_and(trapA,trapB))
+            if (totalB/totalA) > 0.9:
+                count += 1
+                num[ind] = count
+        count = 0
+    
+    table = tabs[num.argmax()]
+    
+    if check_table(table) == False:
+        [[xa,ya],[xb,yb],_,_] = table
+        if math.sqrt((xa-xb)**2+(ya-yb)**2) < 250:
+            [[xa,ya],[xb,yb]] = [[0,75],[400,76]]
+        m1 = (yb - ya)/(xb - xa)
+        T1 = math.tan(110*np.pi/180)
+        T2 = math.tan(70*np.pi/180)
+        md = (m1-T1)/(1+m1*T1)
+        nd = yb - (xb * md)
+        yd = 0
+        xd = int((yd-nd)/md)
+        mc = (m1-T2)/(1+m1*T2)
+        nc = ya - (xa * mc)
+        yc = 0
+        xc = int((yc-nc)/mc)
+        if ya>=yb:
+            n1 = yd - (xd * m1)
+            (xc,yc) = getPointSec([xa,ya,xc,yc],[0,n1,xd,yd])
+            xc = int(xc)
+            yc = int(yc)
+        else:
+            n1 = yc - (xc * m1)
+            (xd,yd) = getPointSec([xb,yb,xd,yd],[0,n1,xc,yc])
+            xd = int(xd)
+            yd = int(yd)
+    else:   
+        [[xa,ya],[xb,yb],[xc,yc],[xd,yd]] = table
+        
+    if show == True:
+        cv2.line(img,(xa,ya),(xb,yb),(0,255,0),5);
+        cv2.line(img,(xa,ya),(xc,yc),(0,255,0),5);
+        cv2.line(img,(xd,yd),(xb,yb),(0,255,0),5);
+        cv2.line(img,(xc,yc),(xd,yd),(0,255,0),5);
+        plt.imshow(img)
+    return table
 
 
 def scalePoints(x,y,a,b,c,d):
@@ -156,8 +266,8 @@ def getDist(pt,l):
     px,py = pt
     m = (y2 - y1)/(x2 - x1)
     n = y1 - (x1 * m)
-    dist = ((-m*px) + py - n) / math.sqrt( m**2 + 1)
-    return dist
+    dist = ((-m*px) + py - n) / math.sqrt(m**2 + 1)
+    return abs(dist)
 
 def getPixelMeterX(pt,l1,l2, horitzontal = True):
     """
@@ -200,7 +310,10 @@ def getRectaPerp(pt,l):
     x1,y1,x2,y2 = l
     px,py = pt
     ml = (y2 - y1)/(x2 - x1)
-    m = 1 / ml
+    try:
+        m = 1 / ml
+    except:
+        m = 9999999999999999999
     n = py - (px * m)
     lperp = [px,py,px+50,(m*(px+50))+n]
     return lperp
@@ -269,12 +382,14 @@ def getMeters(p1,p2,l1,l2,l3,l4):
     m2 = (b2 - b1)/(a2 - a1)
     
     paralel = True
-    if (m1/m2) > 0.1:
+    if abs(m1-m2) > 0.15 :
+        print("?")
         paralel = False
     
     if paralel == True:
         pmx = getPixelMeterX(p1,l1,l2)
         pmy,pf = getPixelMeterY(p2,l1,l2,l3,l4)
+        print(pmy)
     else:
         pmx,pfx = getPixelMeterY(p1,l3,l4,l1,l2,horitzontal=True,paralel=False)
         pmy,pf = getPixelMeterY(p2,l1,l2,l3,l4,paralel=False)
